@@ -8,6 +8,7 @@ fi
 echo 'Building in docker container'
 
 set -e
+mkdir -p /mnt/raspotify
 cd /mnt/raspotify
 
 # Install most recent version of rust
@@ -18,8 +19,12 @@ export CARGO_HOME="/build/cache"
 
 # Install the gcc wrapper in container into cargo
 mkdir -p /.cargo
-echo '[target.arm-unknown-linux-gnueabihf]\nlinker = "gcc-wrapper"' > /.cargo/config
-rustup target add arm-unknown-linux-gnueabihf
+echo '[target.armv7-unknown-linux-gnueabihf]' > /.cargo/config
+echo 'linker = "gcc-wrapper"' >> /.cargo/config
+rustup target add armv7-unknown-linux-gnueabihf
+
+# Optimize our build
+export RUSTFLAGS="-C target-cpu=cortex-a53 -C target-feature=+v8,+vfp4,+neon,-d16"
 
 # Get the git rev of raspotify for .deb versioning
 RASPOTIFY_GIT_VER="$(git describe --tags --always --dirty 2>/dev/null || echo unknown)"
@@ -35,15 +40,14 @@ LIBRESPOT_GIT_REV="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 LIBRESPOT_DEB_VER="$(TZ=UTC git show --quiet --date='format-local:%Y%m%dT%H%M%SZ' --format="%cd.%h" "$LIBRESPOT_GIT_REV" 2>/dev/null || echo "unknown")"
 
 # Build librespot
-sed -i "s/\(librespot\)\( {} ({})\. Built on {}\. Build ID: {}\)/\1 (raspotify v$RASPOTIFY_GIT_VER)\2/" src/main.rs
-sed -i 's/librespot\(_{}_{}\)/raspotify\1/' core/src/connection/mod.rs
-
-cargo build --release --target arm-unknown-linux-gnueabihf --no-default-features --features alsa-backend
+cargo build --release --target armv7-unknown-linux-gnueabihf --no-default-features --features 'alsa-backend jackaudio-backend'
 
 # Copy librespot to pkg root
 cd /mnt/raspotify
 mkdir -p raspotify/usr/bin
-cp -v /build/arm-unknown-linux-gnueabihf/release/librespot raspotify/usr/bin
+cp -v /build/armv7-unknown-linux-gnueabihf/release/librespot raspotify/usr/bin
+
+exit 0
 
 # Strip dramatically decreases the size -- Disabled so we get tracebacks
 #arm-linux-gnueabihf-strip raspotify/usr/bin/librespot
